@@ -105,24 +105,56 @@ class Project1Tab(ttk.Frame):
             messagebox.showerror("Error", f"Gagal membaca CSV:\n{e}")
 
     def reset_work_data(self):
-        """Reset df_work ke kondisi awal (df_raw), tanpa mengulang load dataset."""
+        """Reset df_work ke kondisi awal (df_raw) dan refresh tampilan tab 2–6."""
         if self.df_raw is None:
             messagebox.showwarning("Peringatan", "Belum ada dataset yang dimuat.")
             return
         if not messagebox.askyesno(
             "Konfirmasi Reset Data Kerja",
-            "Semua langkah preprocessing (encoding, transformasi, feature engineering) "
-            "akan dibatalkan dan data dikembalikan ke kondisi awal dataset.\n\n"
+            "Semua langkah preprocessing (missing value handling, outlier handling, "
+            "encoding, transformasi, feature engineering) akan dibatalkan dan data "
+            "dikembalikan ke kondisi awal dataset.\n\n"
             "Hasil eksperimen ML yang sudah ada TIDAK dihapus.\n\n"
             "Lanjutkan?"
         ):
             return
         self.df_work = self.df_raw.copy()
+
+        # --- Tab 2: Missing Value — refresh tabel + chart + status ---
+        self.refresh_missing()
+        self.miss_handle_status.config(text="")
+
+        # --- Tab 3: Outlier — refresh tabel + pertahankan boxplot kolom aktif ---
+        self.refresh_outlier()
+        self.outlier_handle_status.config(text="")
+        # Gambar ulang boxplot untuk kolom yang sedang dipilih (jika ada)
+        if self.outlier_col_var.get():
+            self.plot_outlier_boxplot()
+
+        # --- Tab 4: Encoding — bersihkan preview tree + status + refresh listbox ---
+        self._fill_tree(self.encode_preview_tree, pd.DataFrame())
+        self.encode_status.config(text="")
+        self._refresh_categorical_listbox()
+
+        # --- Tab 5: Transformasi — bersihkan preview tree + status + refresh listbox ---
+        self._fill_tree(self.transform_preview_tree, pd.DataFrame())
+        self.transform_status.config(text="")
+        self._refresh_transform_listbox()
+
+        # --- Tab 6: Feature Engineering — bersihkan preview tree + label hasil ---
+        self._fill_tree(self.feateng_preview_tree, pd.DataFrame())
+        self.fs_result_label.config(text="")
+        self.pca_result_label.config(text="")
+        self._refresh_feateng_choices()
+
+        # --- Refresh pilihan kolom di tab ML ---
         self._refresh_ml_column_choices()
-        self.status_callback("Data kerja direset ke kondisi awal dataset.")
+
+        self.status_callback("Data kerja direset ke kondisi awal dataset (tab 2–6 diperbarui).")
         messagebox.showinfo("Reset Berhasil",
                             "Data kerja telah dikembalikan ke kondisi awal.\n"
-                            "Anda bisa memulai ulang langkah preprocessing dari tab 4 (Encoding).")
+                            "Tab 2 (Missing Value), 3 (Outlier), 4 (Encoding), "
+                            "5 (Transformasi), dan 6 (Feature Eng.) telah diperbarui.")
 
     # ---------------------------------------------------------- 1. viewer
     def _build_viewer_tab(self):
@@ -185,20 +217,58 @@ class Project1Tab(ttk.Frame):
 
     # ---------------------------------------------------------- 2. missing value
     def _build_missing_tab(self):
+        # ---- Panel kiri: tabel analisis ----
         left = ttk.Frame(self.tab_missing)
         left.pack(side="left", fill="both", expand=False, padx=6, pady=6)
+
+        ttk.Label(left, text="Analisis Missing Value per Kolom:",
+                  font=("Segoe UI", 9, "bold")).pack(anchor="w", pady=(4, 2))
+        self.missing_tree = self._make_tree(left)
+
+        # ---- Panel kiri bawah: kontrol penanganan ----
+        handle_frame = ttk.LabelFrame(left, text="Penanganan Missing Value")
+        handle_frame.pack(fill="x", pady=(8, 4))
+
+        ttk.Label(handle_frame, text="Kolom target:").grid(row=0, column=0, padx=4, pady=3, sticky="w")
+        self.miss_col_var = tk.StringVar(value="(semua kolom numerik)")
+        self.miss_col_combo = ttk.Combobox(handle_frame, textvariable=self.miss_col_var,
+                                            state="readonly", width=22)
+        self.miss_col_combo.grid(row=0, column=1, padx=4, pady=3)
+
+        ttk.Label(handle_frame, text="Metode:").grid(row=1, column=0, padx=4, pady=3, sticky="w")
+        self.miss_method_var = tk.StringVar(value="Isi dengan Median")
+        miss_methods = [
+            "Isi dengan Mean",
+            "Isi dengan Median",
+            "Isi dengan Modus",
+            "Forward Fill (ffill)",
+            "Backward Fill (bfill)",
+            "Interpolasi Linear",
+            "Hapus Baris (dropna)",
+        ]
+        self.miss_method_combo = ttk.Combobox(handle_frame, textvariable=self.miss_method_var,
+                                               values=miss_methods, state="readonly", width=22)
+        self.miss_method_combo.grid(row=1, column=1, padx=4, pady=3)
+
+        ttk.Button(handle_frame, text="Terapkan ke df_work",
+                   command=self.apply_missing_handling).grid(row=2, column=0, columnspan=2,
+                                                              pady=6, padx=4, sticky="ew")
+        self.miss_handle_status = ttk.Label(handle_frame, text="", foreground="#337ab7",
+                                             wraplength=300, justify="left")
+        self.miss_handle_status.grid(row=3, column=0, columnspan=2, sticky="w", padx=4)
+
+        # ---- Panel kanan: grafik ----
         right = ttk.Frame(self.tab_missing)
         right.pack(side="right", fill="both", expand=True, padx=6, pady=6)
 
-        self.missing_tree = self._make_tree(left)
         self.missing_fig = Figure(figsize=(5.5, 4.2))
         self.missing_canvas = FigureCanvasTkAgg(self.missing_fig, master=right)
         self.missing_canvas.get_tk_widget().pack(fill="both", expand=True)
 
     def refresh_missing(self):
-        if self.df_raw is None:
+        if self.df_work is None:
             return
-        df = self.df_raw
+        df = self.df_work
         miss_count = df.isna().sum()
         miss_pct = (miss_count / len(df) * 100).round(2)
         result = pd.DataFrame({"Kolom": df.columns, "Jumlah Missing": miss_count.values,
@@ -206,43 +276,163 @@ class Project1Tab(ttk.Frame):
         result = result.sort_values("Persentase (%)", ascending=False)
         self._fill_tree(self.missing_tree, result)
 
+        # Update pilihan kolom
+        cols_with_missing = ["(semua kolom numerik)"] + \
+            list(df.columns[df.isna().any()])
+        self.miss_col_combo["values"] = cols_with_missing
+        if self.miss_col_var.get() not in cols_with_missing:
+            self.miss_col_var.set("(semua kolom numerik)")
+
         self.missing_fig.clear()
         ax = self.missing_fig.add_subplot(111)
         plot_data = result[result["Jumlah Missing"] > 0]
         if len(plot_data) > 0:
-            ax.barh(plot_data["Kolom"], plot_data["Persentase (%)"], color="#d9534f")
+            bars = ax.barh(plot_data["Kolom"], plot_data["Persentase (%)"], color="#d9534f")
             ax.set_xlabel("Persentase Missing (%)")
-            ax.set_title("Missing Value per Kolom")
+            ax.set_title("Missing Value per Kolom (df_work)")
+            for bar, val in zip(bars, plot_data["Persentase (%)"]):
+                ax.text(bar.get_width() + 0.1, bar.get_y() + bar.get_height() / 2,
+                        f"{val:.1f}%", va="center", fontsize=7)
         else:
-            ax.text(0.5, 0.5, "Tidak ada missing value", ha="center", va="center")
+            ax.text(0.5, 0.5, "✓ Tidak ada missing value di df_work",
+                    ha="center", va="center", fontsize=12, color="#5cb85c")
         self.missing_fig.tight_layout()
         self.missing_canvas.draw()
 
+    def apply_missing_handling(self):
+        if self.df_work is None:
+            messagebox.showwarning("Peringatan", "Muat dataset terlebih dahulu.")
+            return
+        method = self.miss_method_var.get()
+        col_target = self.miss_col_var.get()
+        df = self.df_work.copy()
+
+        # Tentukan kolom yang akan diproses
+        if col_target == "(semua kolom numerik)":
+            target_cols = list(df.select_dtypes(include=np.number).columns[df.select_dtypes(include=np.number).isna().any()])
+        else:
+            target_cols = [col_target] if col_target in df.columns else []
+
+        if not target_cols:
+            messagebox.showinfo("Info", "Tidak ada missing value pada kolom yang dipilih.")
+            return
+
+        before_total = df[target_cols].isna().sum().sum()
+
+        try:
+            if method == "Isi dengan Mean":
+                for col in target_cols:
+                    if pd.api.types.is_numeric_dtype(df[col]):
+                        df[col].fillna(df[col].mean(), inplace=True)
+            elif method == "Isi dengan Median":
+                for col in target_cols:
+                    if pd.api.types.is_numeric_dtype(df[col]):
+                        df[col].fillna(df[col].median(), inplace=True)
+            elif method == "Isi dengan Modus":
+                for col in target_cols:
+                    mode_val = df[col].mode()
+                    if len(mode_val) > 0:
+                        df[col].fillna(mode_val[0], inplace=True)
+            elif method == "Forward Fill (ffill)":
+                df[target_cols] = df[target_cols].ffill()
+            elif method == "Backward Fill (bfill)":
+                df[target_cols] = df[target_cols].bfill()
+            elif method == "Interpolasi Linear":
+                for col in target_cols:
+                    if pd.api.types.is_numeric_dtype(df[col]):
+                        df[col] = df[col].interpolate(method="linear", limit_direction="both")
+            elif method == "Hapus Baris (dropna)":
+                before_rows = len(df)
+                df = df.dropna(subset=target_cols)
+                after_rows = len(df)
+                self.df_work = df
+                self.miss_handle_status.config(
+                    text=f"✓ Hapus baris: {before_rows - after_rows:,} baris dihapus. "
+                         f"Sisa: {after_rows:,} baris.")
+                self.refresh_missing()
+                self._refresh_ml_column_choices()
+                return
+
+            after_total = df[target_cols].isna().sum().sum()
+            self.df_work = df
+            self.miss_handle_status.config(
+                text=f"✓ '{method}' diterapkan pada {len(target_cols)} kolom. "
+                     f"Missing berkurang: {before_total:,} → {after_total:,}.")
+        except Exception as e:
+            messagebox.showerror("Error", f"Gagal menerapkan penanganan missing value:\n{e}")
+            return
+
+        self.refresh_missing()
+        self._refresh_ml_column_choices()
+
     # ---------------------------------------------------------- 3. outlier
     def _build_outlier_tab(self):
+        # ---- Panel kiri: tabel analisis + kontrol ----
         left = ttk.Frame(self.tab_outlier)
         left.pack(side="left", fill="both", expand=False, padx=6, pady=6)
+
+        ttk.Label(left, text="Analisis Outlier per Kolom Numerik:",
+                  font=("Segoe UI", 9, "bold")).pack(anchor="w", pady=(4, 2))
+        self.outlier_tree = self._make_tree(left)
+
+        handle_frame = ttk.LabelFrame(left, text="Penanganan Outlier")
+        handle_frame.pack(fill="x", pady=(8, 4))
+
+        ttk.Label(handle_frame, text="Kolom target:").grid(row=0, column=0, padx=4, pady=3, sticky="w")
+        self.outlier_handle_col_var = tk.StringVar(value="(semua kolom numerik)")
+        self.outlier_handle_col_combo = ttk.Combobox(handle_frame,
+                                                       textvariable=self.outlier_handle_col_var,
+                                                       state="readonly", width=22)
+        self.outlier_handle_col_combo.grid(row=0, column=1, padx=4, pady=3)
+
+        ttk.Label(handle_frame, text="Deteksi metode:").grid(row=1, column=0, padx=4, pady=3, sticky="w")
+        self.outlier_detect_var = tk.StringVar(value="IQR (1.5×)")
+        ttk.Combobox(handle_frame, textvariable=self.outlier_detect_var,
+                     values=["IQR (1.5×)", "IQR (3×)", "Z-Score (>3)", "Z-Score (>2.5)"],
+                     state="readonly", width=22).grid(row=1, column=1, padx=4, pady=3)
+
+        ttk.Label(handle_frame, text="Penanganan:").grid(row=2, column=0, padx=4, pady=3, sticky="w")
+        self.outlier_action_var = tk.StringVar(value="Winsorizing (Clip ke Batas)")
+        outlier_actions = [
+            "Winsorizing (Clip ke Batas)",
+            "Ganti dengan Median",
+            "Ganti dengan Mean",
+            "Hapus Baris Outlier",
+            "Ganti dengan NaN (tandai saja)",
+        ]
+        ttk.Combobox(handle_frame, textvariable=self.outlier_action_var,
+                     values=outlier_actions, state="readonly",
+                     width=22).grid(row=2, column=1, padx=4, pady=3)
+
+        ttk.Button(handle_frame, text="Terapkan ke df_work",
+                   command=self.apply_outlier_handling).grid(row=3, column=0, columnspan=2,
+                                                              pady=6, padx=4, sticky="ew")
+        self.outlier_handle_status = ttk.Label(handle_frame, text="", foreground="#337ab7",
+                                                wraplength=300, justify="left")
+        self.outlier_handle_status.grid(row=4, column=0, columnspan=2, sticky="w", padx=4)
+
+        # ---- Panel kanan: visualisasi sebelum/sesudah ----
         right = ttk.Frame(self.tab_outlier)
         right.pack(side="right", fill="both", expand=True, padx=6, pady=6)
 
-        self.outlier_tree = self._make_tree(left)
-
         sel_frame = ttk.Frame(right)
         sel_frame.pack(fill="x")
-        ttk.Label(sel_frame, text="Kolom untuk Boxplot:").pack(side="left")
+        ttk.Label(sel_frame, text="Kolom Boxplot:").pack(side="left")
         self.outlier_col_var = tk.StringVar()
-        self.outlier_col_combo = ttk.Combobox(sel_frame, textvariable=self.outlier_col_var, state="readonly")
+        self.outlier_col_combo = ttk.Combobox(sel_frame, textvariable=self.outlier_col_var,
+                                               state="readonly", width=20)
         self.outlier_col_combo.pack(side="left", padx=4)
-        ttk.Button(sel_frame, text="Tampilkan", command=self.plot_outlier_boxplot).pack(side="left", padx=4)
+        ttk.Button(sel_frame, text="Tampilkan Before/After",
+                   command=self.plot_outlier_boxplot).pack(side="left", padx=4)
 
-        self.outlier_fig = Figure(figsize=(5.5, 4))
+        self.outlier_fig = Figure(figsize=(5.5, 4.5))
         self.outlier_canvas = FigureCanvasTkAgg(self.outlier_fig, master=right)
         self.outlier_canvas.get_tk_widget().pack(fill="both", expand=True)
 
     def refresh_outlier(self):
-        if self.df_raw is None:
+        if self.df_work is None:
             return
-        df = self.df_raw
+        df = self.df_work
         num_cols = df.select_dtypes(include=np.number).columns
         rows = []
         for col in num_cols:
@@ -252,23 +442,126 @@ class Project1Tab(ttk.Frame):
             q1, q3 = s.quantile(0.25), s.quantile(0.75)
             iqr = q3 - q1
             lower, upper = q1 - 1.5 * iqr, q3 + 1.5 * iqr
-            n_out = ((s < lower) | (s > upper)).sum()
-            rows.append({"Kolom": col, "Jumlah Outlier (IQR)": int(n_out),
-                         "Lower Bound": round(lower, 2), "Upper Bound": round(upper, 2)})
-        result = pd.DataFrame(rows)
+            n_out = int(((s < lower) | (s > upper)).sum())
+            pct_out = round(n_out / len(s) * 100, 2)
+            rows.append({"Kolom": col, "Jumlah Outlier": n_out,
+                         "Persen (%)": pct_out,
+                         "Lower IQR": round(lower, 2), "Upper IQR": round(upper, 2),
+                         "Min": round(s.min(), 2), "Max": round(s.max(), 2)})
+        result = pd.DataFrame(rows).sort_values("Jumlah Outlier", ascending=False) if rows else pd.DataFrame()
         self._fill_tree(self.outlier_tree, result)
-        self.outlier_col_combo["values"] = list(num_cols)
-        if len(num_cols) > 0:
-            self.outlier_col_var.set(num_cols[0])
+
+        col_list = list(num_cols)
+        self.outlier_col_combo["values"] = col_list
+        self.outlier_handle_col_combo["values"] = ["(semua kolom numerik)"] + col_list
+        if col_list and not self.outlier_col_var.get():
+            self.outlier_col_var.set(col_list[0])
+        if not self.outlier_handle_col_var.get():
+            self.outlier_handle_col_var.set("(semua kolom numerik)")
+
+    def _get_outlier_bounds(self, s, method):
+        """Kembalikan (lower, upper) berdasarkan metode deteksi."""
+        if method in ("IQR (1.5×)", "IQR (3×)"):
+            mult = 1.5 if "1.5" in method else 3.0
+            q1, q3 = s.quantile(0.25), s.quantile(0.75)
+            iqr = q3 - q1
+            return q1 - mult * iqr, q3 + mult * iqr
+        else:  # Z-Score
+            threshold = 3.0 if ">3" in method else 2.5
+            mean, std = s.mean(), s.std()
+            return mean - threshold * std, mean + threshold * std
+
+    def apply_outlier_handling(self):
+        if self.df_work is None:
+            messagebox.showwarning("Peringatan", "Muat dataset terlebih dahulu.")
+            return
+        detect_method = self.outlier_detect_var.get()
+        action = self.outlier_action_var.get()
+        col_target = self.outlier_handle_col_var.get()
+        df = self.df_work.copy()
+
+        num_cols = list(df.select_dtypes(include=np.number).columns)
+        target_cols = num_cols if col_target == "(semua kolom numerik)" else \
+            ([col_target] if col_target in df.columns else [])
+
+        if not target_cols:
+            messagebox.showwarning("Peringatan", "Kolom tidak ditemukan.")
+            return
+
+        total_affected = 0
+        rows_before = len(df)
+
+        try:
+            if action == "Hapus Baris Outlier":
+                mask_any = pd.Series(False, index=df.index)
+                for col in target_cols:
+                    s = df[col].dropna()
+                    lower, upper = self._get_outlier_bounds(s, detect_method)
+                    mask_any |= (df[col] < lower) | (df[col] > upper)
+                df = df[~mask_any]
+                total_affected = rows_before - len(df)
+                self.df_work = df
+                self.outlier_handle_status.config(
+                    text=f"✓ Hapus baris outlier: {total_affected:,} baris dihapus "
+                         f"({rows_before:,} → {len(df):,} baris).")
+            else:
+                for col in target_cols:
+                    s = df[col].dropna()
+                    if len(s) == 0:
+                        continue
+                    lower, upper = self._get_outlier_bounds(s, detect_method)
+                    mask = (df[col] < lower) | (df[col] > upper)
+                    n = int(mask.sum())
+                    if n == 0:
+                        continue
+                    total_affected += n
+                    if action == "Winsorizing (Clip ke Batas)":
+                        df[col] = df[col].clip(lower=lower, upper=upper)
+                    elif action == "Ganti dengan Median":
+                        df.loc[mask, col] = s.median()
+                    elif action == "Ganti dengan Mean":
+                        df.loc[mask, col] = s.mean()
+                    elif action == "Ganti dengan NaN (tandai saja)":
+                        df.loc[mask, col] = np.nan
+                self.df_work = df
+                self.outlier_handle_status.config(
+                    text=f"✓ '{action}' ({detect_method}) diterapkan pada "
+                         f"{len(target_cols)} kolom. Total nilai terpengaruh: {total_affected:,}.")
+        except Exception as e:
+            messagebox.showerror("Error", f"Gagal menangani outlier:\n{e}")
+            return
+
+        self.refresh_outlier()
+        self._refresh_ml_column_choices()
 
     def plot_outlier_boxplot(self):
-        if self.df_raw is None or not self.outlier_col_var.get():
+        if self.df_work is None or not self.outlier_col_var.get():
             return
         col = self.outlier_col_var.get()
         self.outlier_fig.clear()
-        ax = self.outlier_fig.add_subplot(111)
-        ax.boxplot(self.df_raw[col].dropna(), vert=True)
-        ax.set_title(f"Boxplot: {col}")
+
+        # Tampilkan before (df_raw) vs after (df_work) side by side
+        raw_data = self.df_raw[col].dropna() if (self.df_raw is not None and col in self.df_raw.columns) else None
+        work_data = self.df_work[col].dropna() if col in self.df_work.columns else None
+
+        if raw_data is not None and work_data is not None and not raw_data.equals(work_data):
+            ax1 = self.outlier_fig.add_subplot(121)
+            ax2 = self.outlier_fig.add_subplot(122)
+            ax1.boxplot(raw_data, vert=True, patch_artist=True,
+                        boxprops=dict(facecolor="#d9534f", alpha=0.6))
+            ax1.set_title(f"SEBELUM\n{col}", fontsize=9)
+            ax1.set_xlabel(f"n={len(raw_data):,}")
+            ax2.boxplot(work_data, vert=True, patch_artist=True,
+                        boxprops=dict(facecolor="#5cb85c", alpha=0.6))
+            ax2.set_title(f"SESUDAH\n{col}", fontsize=9)
+            ax2.set_xlabel(f"n={len(work_data):,}")
+        else:
+            ax = self.outlier_fig.add_subplot(111)
+            data = work_data if work_data is not None else raw_data
+            ax.boxplot(data, vert=True, patch_artist=True,
+                       boxprops=dict(facecolor="#5bc0de", alpha=0.6))
+            ax.set_title(f"Boxplot: {col}")
+
         self.outlier_fig.tight_layout()
         self.outlier_canvas.draw()
 

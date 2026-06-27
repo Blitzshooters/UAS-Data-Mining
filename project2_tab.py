@@ -389,38 +389,175 @@ class Project2Tab(ttk.Frame):
 
     # ---------------------------------------------------------- 3. preprocessing
     def _build_prep_tab(self):
-        frame = ttk.LabelFrame(self.tab_prep, text="Preprocessing")
-        frame.pack(fill="x", padx=6, pady=6)
+        # ---- Baris atas: dua panel berdampingan ----
+        top_panels = ttk.Frame(self.tab_prep)
+        top_panels.pack(fill="x", padx=6, pady=4)
 
-        ttk.Label(frame, text="Missing Value Handling:").grid(row=0, column=0, padx=4, pady=4, sticky="w")
-        self.miss_method = ttk.Combobox(frame, state="readonly",
-                                          values=["Interpolasi Linear", "Forward Fill", "Isi dengan Median"])
+        # Panel Missing Value
+        mv_frame = ttk.LabelFrame(top_panels, text="Penanganan Missing Value")
+        mv_frame.pack(side="left", fill="both", expand=True, padx=(0, 4))
+
+        ttk.Label(mv_frame, text="Metode:").grid(row=0, column=0, padx=4, pady=4, sticky="w")
+        self.miss_method = ttk.Combobox(mv_frame, state="readonly", width=22,
+                                         values=["Interpolasi Linear", "Forward Fill",
+                                                 "Backward Fill", "Isi dengan Median",
+                                                 "Isi dengan Mean"])
         self.miss_method.set("Interpolasi Linear")
         self.miss_method.grid(row=0, column=1, padx=4)
 
-        ttk.Label(frame, text="Scaling:").grid(row=1, column=0, padx=4, pady=4, sticky="w")
-        self.scale_method = ttk.Combobox(frame, state="readonly",
-                                           values=["MinMaxScaler", "StandardScaler", "RobustScaler"])
+        ttk.Button(mv_frame, text="Terapkan ke Series",
+                   command=self.apply_series_missing).grid(row=1, column=0, columnspan=2,
+                                                           pady=4, padx=4, sticky="ew")
+        self.prep_mv_status = ttk.Label(mv_frame, text="", foreground="#337ab7")
+        self.prep_mv_status.grid(row=2, column=0, columnspan=2, sticky="w", padx=4)
+
+        # Panel Outlier
+        out_frame = ttk.LabelFrame(top_panels, text="Penanganan Outlier Time Series")
+        out_frame.pack(side="left", fill="both", expand=True, padx=(4, 0))
+
+        ttk.Label(out_frame, text="Deteksi:").grid(row=0, column=0, padx=4, pady=4, sticky="w")
+        self.prep_outlier_detect_var = tk.StringVar(value="IQR (1.5×)")
+        ttk.Combobox(out_frame, textvariable=self.prep_outlier_detect_var,
+                     values=["IQR (1.5×)", "IQR (3×)", "Z-Score (>3)", "Z-Score (>2.5)",
+                             "Rolling Z-Score (>3)"],
+                     state="readonly", width=22).grid(row=0, column=1, padx=4)
+
+        ttk.Label(out_frame, text="Penanganan:").grid(row=1, column=0, padx=4, pady=4, sticky="w")
+        self.prep_outlier_action_var = tk.StringVar(value="Interpolasi Linear")
+        ttk.Combobox(out_frame, textvariable=self.prep_outlier_action_var,
+                     values=["Interpolasi Linear", "Winsorizing (Clip ke Batas)",
+                             "Ganti dengan Median Rolling", "Ganti dengan NaN",
+                             "Hapus Titik Outlier"],
+                     state="readonly", width=22).grid(row=1, column=1, padx=4)
+
+        ttk.Button(out_frame, text="Terapkan ke Series",
+                   command=self.apply_series_outlier).grid(row=2, column=0, columnspan=2,
+                                                           pady=4, padx=4, sticky="ew")
+        self.prep_out_status = ttk.Label(out_frame, text="", foreground="#337ab7")
+        self.prep_out_status.grid(row=3, column=0, columnspan=2, sticky="w", padx=4)
+
+        # ---- Panel konfigurasi LSTM prep ----
+        lstm_frame = ttk.LabelFrame(self.tab_prep, text="Konfigurasi Windowing & Split")
+        lstm_frame.pack(fill="x", padx=6, pady=4)
+
+        ttk.Label(lstm_frame, text="Scaling:").grid(row=0, column=0, padx=4, pady=4, sticky="w")
+        self.scale_method = ttk.Combobox(lstm_frame, state="readonly",
+                                          values=["MinMaxScaler", "StandardScaler", "RobustScaler"])
         self.scale_method.set("MinMaxScaler")
-        self.scale_method.grid(row=1, column=1, padx=4)
+        self.scale_method.grid(row=0, column=1, padx=4)
 
-        ttk.Label(frame, text="Sequence Length (Windowing):").grid(row=2, column=0, padx=4, pady=4, sticky="w")
+        ttk.Label(lstm_frame, text="Sequence Length (Windowing):").grid(row=0, column=2, padx=(16, 4), sticky="w")
         self.seq_len_var = tk.IntVar(value=14)
-        ttk.Entry(frame, textvariable=self.seq_len_var, width=8).grid(row=2, column=1, padx=4, sticky="w")
+        ttk.Entry(lstm_frame, textvariable=self.seq_len_var, width=8).grid(row=0, column=3, padx=4, sticky="w")
 
-        ttk.Label(frame, text="Train-Test Split (% train):").grid(row=3, column=0, padx=4, pady=4, sticky="w")
+        ttk.Label(lstm_frame, text="Train-Test Split (% train):").grid(row=0, column=4, padx=(16, 4), sticky="w")
         self.split_var = tk.IntVar(value=80)
-        ttk.Entry(frame, textvariable=self.split_var, width=8).grid(row=3, column=1, padx=4, sticky="w")
+        ttk.Entry(lstm_frame, textvariable=self.split_var, width=8).grid(row=0, column=5, padx=4, sticky="w")
 
-        ttk.Button(frame, text="Jalankan Preprocessing", command=self.run_preprocessing).grid(row=4, column=1, sticky="w", padx=4, pady=8)
-        self.prep_status_label = ttk.Label(frame, text="")
-        self.prep_status_label.grid(row=5, column=0, columnspan=2, sticky="w", padx=4)
+        ttk.Button(lstm_frame, text="Jalankan Preprocessing (Scaling + Windowing)",
+                   command=self.run_preprocessing).grid(row=1, column=0, columnspan=6,
+                                                         pady=6, padx=4, sticky="w")
+        self.prep_status_label = ttk.Label(lstm_frame, text="")
+        self.prep_status_label.grid(row=2, column=0, columnspan=6, sticky="w", padx=4)
 
-        plot_frame = ttk.LabelFrame(self.tab_prep, text="Data Setelah Missing Value Handling & Scaling")
-        plot_frame.pack(fill="both", expand=True, padx=6, pady=6)
+        # ---- Grafik preview ----
+        plot_frame = ttk.LabelFrame(self.tab_prep, text="Preview Series (setelah handling)")
+        plot_frame.pack(fill="both", expand=True, padx=6, pady=4)
         self.prep_fig = Figure(figsize=(7, 4))
         self.prep_canvas = FigureCanvasTkAgg(self.prep_fig, master=plot_frame)
         self.prep_canvas.get_tk_widget().pack(fill="both", expand=True)
+
+    def apply_series_missing(self):
+        """Tangani missing value pada df_series (series yang sudah disiapkan)."""
+        if self.df_series is None:
+            messagebox.showwarning("Peringatan", "Siapkan series dahulu di tab 1.")
+            return
+        s = self.df_series.copy()
+        n_missing_before = int(s.isna().sum())
+        if n_missing_before == 0:
+            self.prep_mv_status.config(text="✓ Series tidak memiliki missing value.")
+            return
+        method = self.miss_method.get()
+        if method == "Interpolasi Linear":
+            s = s.interpolate(method="linear", limit_direction="both")
+        elif method == "Forward Fill":
+            s = s.ffill().bfill()
+        elif method == "Backward Fill":
+            s = s.bfill().ffill()
+        elif method == "Isi dengan Median":
+            s = s.fillna(s.median())
+        elif method == "Isi dengan Mean":
+            s = s.fillna(s.mean())
+        n_missing_after = int(s.isna().sum())
+        self.df_series = s
+        self.prep_mv_status.config(
+            text=f"✓ '{method}': {n_missing_before} missing → {n_missing_after} missing tersisa.")
+        self._plot_prep_preview()
+
+    def apply_series_outlier(self):
+        """Tangani outlier pada df_series."""
+        if self.df_series is None:
+            messagebox.showwarning("Peringatan", "Siapkan series dahulu di tab 1.")
+            return
+        s = self.df_series.copy().dropna()
+        detect = self.prep_outlier_detect_var.get()
+        action = self.prep_outlier_action_var.get()
+
+        # Deteksi
+        if "IQR" in detect:
+            mult = 1.5 if "1.5" in detect else 3.0
+            q1, q3 = s.quantile(0.25), s.quantile(0.75)
+            lower, upper = q1 - mult * (q3 - q1), q3 + mult * (q3 - q1)
+            outlier_mask = (s < lower) | (s > upper)
+        elif "Rolling" in detect:
+            roll_mean = s.rolling(30, min_periods=5, center=True).mean()
+            roll_std = s.rolling(30, min_periods=5, center=True).std()
+            outlier_mask = (s - roll_mean).abs() > 3 * roll_std
+            lower, upper = None, None
+        else:
+            threshold = 3.0 if ">3" in detect else 2.5
+            z = (s - s.mean()) / s.std()
+            outlier_mask = z.abs() > threshold
+            lower, upper = s.mean() - threshold * s.std(), s.mean() + threshold * s.std()
+
+        n_out = int(outlier_mask.sum())
+        if n_out == 0:
+            self.prep_out_status.config(text=f"✓ Tidak ditemukan outlier dengan metode {detect}.")
+            return
+
+        try:
+            if action == "Interpolasi Linear":
+                s[outlier_mask] = np.nan
+                s = s.interpolate(method="linear", limit_direction="both")
+            elif action == "Winsorizing (Clip ke Batas)" and lower is not None:
+                s = s.clip(lower=lower, upper=upper)
+            elif action == "Ganti dengan Median Rolling":
+                roll_med = s.rolling(15, min_periods=3, center=True).median()
+                s[outlier_mask] = roll_med[outlier_mask]
+            elif action == "Ganti dengan NaN":
+                s[outlier_mask] = np.nan
+            elif action == "Hapus Titik Outlier":
+                s = s[~outlier_mask]
+            self.df_series = s
+            self.prep_out_status.config(
+                text=f"✓ {n_out} outlier ({detect}) → '{action}'. "
+                     f"Series kini: {len(s)} titik.")
+        except Exception as e:
+            messagebox.showerror("Error", f"Gagal menangani outlier:\n{e}")
+            return
+
+        self._plot_prep_preview()
+
+    def _plot_prep_preview(self):
+        """Tampilkan grafik preview series saat ini."""
+        if self.df_series is None:
+            return
+        self.prep_fig.clear()
+        ax = self.prep_fig.add_subplot(111)
+        ax.plot(self.df_series.index, self.df_series.values, color="#337ab7", linewidth=0.8)
+        ax.set_title("Preview Series (setelah handling missing value / outlier)")
+        self.prep_fig.tight_layout()
+        self.prep_canvas.draw()
 
     def run_preprocessing(self):
         if self.df_series is None:
@@ -428,13 +565,9 @@ class Project2Tab(ttk.Frame):
             return
         s = self.df_series.copy()
 
-        method = self.miss_method.get()
-        if method == "Interpolasi Linear":
-            s = s.interpolate(limit_direction="both")
-        elif method == "Forward Fill":
-            s = s.ffill().bfill()
-        else:
-            s = s.fillna(s.median())
+        # Auto-handle missing yang tersisa sebelum scaling
+        if s.isna().any():
+            s = s.interpolate(limit_direction="both").ffill().bfill()
 
         scaler_cls = {"MinMaxScaler": MinMaxScaler, "StandardScaler": StandardScaler,
                       "RobustScaler": RobustScaler}[self.scale_method.get()]
@@ -459,13 +592,14 @@ class Project2Tab(ttk.Frame):
         self.test_dates = s.index[seq_len + split_idx:]
 
         self.prep_status_label.config(text=(
-            f"Selesai. Total window: {len(X)} | Train: {len(self.X_train)} | Test: {len(self.X_test)} | "
-            f"Sequence length: {seq_len}"))
+            f"✓ Selesai. Total window: {len(X)} | Train: {len(self.X_train)} | "
+            f"Test: {len(self.X_test)} | Seq len: {seq_len} | "
+            f"Scaler: {self.scale_method.get()}"))
 
         self.prep_fig.clear()
         ax = self.prep_fig.add_subplot(111)
         ax.plot(self.scaled_series.index, self.scaled_series.values, color="#5cb85c", linewidth=0.8)
-        ax.set_title("Data Setelah Missing Value Handling + Scaling")
+        ax.set_title("Data Setelah Scaling (siap untuk LSTM)")
         self.prep_fig.tight_layout()
         self.prep_canvas.draw()
         self.status_callback("Preprocessing selesai. Lanjut ke tab Deep Learning (LSTM).")
