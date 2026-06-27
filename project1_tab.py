@@ -124,12 +124,9 @@ class Project1Tab(ttk.Frame):
         self.refresh_missing()
         self.miss_handle_status.config(text="")
 
-        # --- Tab 3: Outlier — refresh tabel + pertahankan boxplot kolom aktif ---
+        # --- Tab 3: Outlier — refresh tabel + gambar ulang boxplot otomatis ---
         self.refresh_outlier()
         self.outlier_handle_status.config(text="")
-        # Gambar ulang boxplot untuk kolom yang sedang dipilih (jika ada)
-        if self.outlier_col_var.get():
-            self.plot_outlier_boxplot()
 
         # --- Tab 4: Encoding — bersihkan preview tree + status + refresh listbox ---
         self._fill_tree(self.encode_preview_tree, pd.DataFrame())
@@ -367,7 +364,25 @@ class Project1Tab(ttk.Frame):
 
     # ---------------------------------------------------------- 3. outlier
     def _build_outlier_tab(self):
-        # ---- Panel kiri: tabel analisis + kontrol ----
+        # ---- Panel kanan di-pack PERTAMA agar ruangnya terjaga (sama seperti tab missing value) ----
+        right = ttk.Frame(self.tab_outlier)
+        right.pack(side="right", fill="both", expand=True, padx=6, pady=6)
+
+        sel_frame = ttk.Frame(right)
+        sel_frame.pack(fill="x")
+        ttk.Label(sel_frame, text="Kolom Boxplot:").pack(side="left")
+        self.outlier_col_var = tk.StringVar()
+        self.outlier_col_combo = ttk.Combobox(sel_frame, textvariable=self.outlier_col_var,
+                                               state="readonly", width=20)
+        self.outlier_col_combo.pack(side="left", padx=4)
+        ttk.Button(sel_frame, text="Tampilkan Before/After",
+                   command=self.plot_outlier_boxplot).pack(side="left", padx=4)
+
+        self.outlier_fig = Figure(figsize=(5.5, 4.5))
+        self.outlier_canvas = FigureCanvasTkAgg(self.outlier_fig, master=right)
+        self.outlier_canvas.get_tk_widget().pack(fill="both", expand=True)
+
+        # ---- Panel kiri di-pack SETELAH kanan: tabel analisis + kontrol ----
         left = ttk.Frame(self.tab_outlier)
         left.pack(side="left", fill="both", expand=False, padx=6, pady=6)
 
@@ -411,25 +426,7 @@ class Project1Tab(ttk.Frame):
                                                 wraplength=300, justify="left")
         self.outlier_handle_status.grid(row=4, column=0, columnspan=2, sticky="w", padx=4)
 
-        # ---- Panel kanan: visualisasi sebelum/sesudah ----
-        right = ttk.Frame(self.tab_outlier)
-        right.pack(side="right", fill="both", expand=True, padx=6, pady=6)
-
-        sel_frame = ttk.Frame(right)
-        sel_frame.pack(fill="x")
-        ttk.Label(sel_frame, text="Kolom Boxplot:").pack(side="left")
-        self.outlier_col_var = tk.StringVar()
-        self.outlier_col_combo = ttk.Combobox(sel_frame, textvariable=self.outlier_col_var,
-                                               state="readonly", width=20)
-        self.outlier_col_combo.pack(side="left", padx=4)
-        ttk.Button(sel_frame, text="Tampilkan Before/After",
-                   command=self.plot_outlier_boxplot).pack(side="left", padx=4)
-
-        self.outlier_fig = Figure(figsize=(5.5, 4.5))
-        self.outlier_canvas = FigureCanvasTkAgg(self.outlier_fig, master=right)
-        self.outlier_canvas.get_tk_widget().pack(fill="both", expand=True)
-
-    def refresh_outlier(self):
+    def refresh_outlier(self, redraw_plot=True):
         if self.df_work is None:
             return
         df = self.df_work
@@ -454,10 +451,17 @@ class Project1Tab(ttk.Frame):
         col_list = list(num_cols)
         self.outlier_col_combo["values"] = col_list
         self.outlier_handle_col_combo["values"] = ["(semua kolom numerik)"] + col_list
-        if col_list and not self.outlier_col_var.get():
-            self.outlier_col_var.set(col_list[0])
+
+        # Pertahankan pilihan kolom aktif jika masih ada; jika tidak, ambil kolom pertama
+        current = self.outlier_col_var.get()
+        if current not in col_list:
+            self.outlier_col_var.set(col_list[0] if col_list else "")
         if not self.outlier_handle_col_var.get():
             self.outlier_handle_col_var.set("(semua kolom numerik)")
+
+        # Gambar ulang boxplot otomatis
+        if redraw_plot and self.outlier_col_var.get():
+            self.plot_outlier_boxplot()
 
     def _get_outlier_bounds(self, s, method):
         """Kembalikan (lower, upper) berdasarkan metode deteksi."""
