@@ -488,6 +488,11 @@ class Project2Tab(ttk.Frame):
         btn_frame.grid(row=0, column=2, rowspan=5, padx=20)
         ttk.Button(btn_frame, text="Mulai Training", command=self.start_training).pack(pady=4, fill="x")
         ttk.Button(btn_frame, text="Hentikan Training", command=self.stop_training).pack(pady=4, fill="x")
+        ttk.Separator(btn_frame, orient="horizontal").pack(fill="x", pady=6)
+        ttk.Button(btn_frame, text="↺ Reset Model",
+                   command=self.reset_model).pack(pady=2, fill="x")
+        ttk.Button(btn_frame, text="↺ Reset Riwayat Evaluasi",
+                   command=self.reset_eval_history).pack(pady=2, fill="x")
 
         progress_frame = ttk.LabelFrame(self.tab_dl, text="Progress Training")
         progress_frame.pack(fill="x", padx=6, pady=6)
@@ -547,6 +552,46 @@ class Project2Tab(ttk.Frame):
     def stop_training(self):
         self.stop_flag = True
         self.train_status_label.config(text="Status: training dihentikan oleh pengguna.")
+
+    def reset_model(self):
+        """Hapus model yang sudah dilatih dan hasil prediksi, agar bisa training ulang dari nol."""
+        if self.model is None and not hasattr(self, "last_pred"):
+            messagebox.showinfo("Info", "Tidak ada model yang perlu direset.")
+            return
+        if not messagebox.askyesno(
+            "Konfirmasi Reset Model",
+            "Model LSTM yang sudah dilatih, loss history, dan hasil prediksi akan dihapus.\n\n"
+            "Data preprocessing (train/test split) TETAP tersimpan, sehingga Anda bisa langsung "
+            "training ulang dengan parameter yang berbeda tanpa menjalankan preprocessing lagi.\n\n"
+            "Lanjutkan?"
+        ):
+            return
+        self.stop_flag = True  # hentikan jika sedang training
+        self.model = None
+        for attr in ("last_pred", "last_actual"):
+            if hasattr(self, attr):
+                delattr(self, attr)
+        self.progress_bar["value"] = 0
+        self.train_status_label.config(text="Status: model direset. Siap training ulang.")
+        self.loss_fig.clear()
+        self.loss_canvas.draw()
+        self.status_callback("Model LSTM direset. Ubah parameter lalu klik 'Mulai Training'.")
+
+    def reset_eval_history(self):
+        """Hapus riwayat evaluasi (tabel eval_results) tanpa menghapus model."""
+        if not self.eval_results:
+            messagebox.showinfo("Info", "Riwayat evaluasi sudah kosong.")
+            return
+        if not messagebox.askyesno(
+            "Konfirmasi Reset Riwayat Evaluasi",
+            "Tabel riwayat evaluasi LSTM akan dikosongkan.\n\n"
+            "Model yang sudah dilatih TIDAK dihapus.\n\nLanjutkan?"
+        ):
+            return
+        self.eval_results = []
+        self._fill_tree(self.eval_tree, pd.DataFrame())
+        self.update_summary()
+        self.status_callback("Riwayat evaluasi dikosongkan.")
 
     # ---------------------------------------------------------- 5. forecasting
     def _build_forecast_tab(self):

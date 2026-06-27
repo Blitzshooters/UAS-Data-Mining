@@ -42,6 +42,8 @@ class Project1Tab(ttk.Frame):
         ttk.Button(top_bar, text="Generate Dataset Sintetis (mirip US Accidents)",
                    command=self.load_synthetic).pack(side="left", padx=3)
         ttk.Button(top_bar, text="Load CSV...", command=self.load_csv).pack(side="left", padx=3)
+        ttk.Button(top_bar, text="↺ Reset Data Kerja",
+                   command=self.reset_work_data).pack(side="left", padx=3)
         ttk.Label(top_bar, text="Jumlah baris demo:").pack(side="left", padx=(15, 3))
         self.n_rows_var = tk.IntVar(value=60000)
         ttk.Entry(top_bar, textvariable=self.n_rows_var, width=10).pack(side="left")
@@ -101,6 +103,26 @@ class Project1Tab(ttk.Frame):
             self.refresh_viewer()
         except Exception as e:
             messagebox.showerror("Error", f"Gagal membaca CSV:\n{e}")
+
+    def reset_work_data(self):
+        """Reset df_work ke kondisi awal (df_raw), tanpa mengulang load dataset."""
+        if self.df_raw is None:
+            messagebox.showwarning("Peringatan", "Belum ada dataset yang dimuat.")
+            return
+        if not messagebox.askyesno(
+            "Konfirmasi Reset Data Kerja",
+            "Semua langkah preprocessing (encoding, transformasi, feature engineering) "
+            "akan dibatalkan dan data dikembalikan ke kondisi awal dataset.\n\n"
+            "Hasil eksperimen ML yang sudah ada TIDAK dihapus.\n\n"
+            "Lanjutkan?"
+        ):
+            return
+        self.df_work = self.df_raw.copy()
+        self._refresh_ml_column_choices()
+        self.status_callback("Data kerja direset ke kondisi awal dataset.")
+        messagebox.showinfo("Reset Berhasil",
+                            "Data kerja telah dikembalikan ke kondisi awal.\n"
+                            "Anda bisa memulai ulang langkah preprocessing dari tab 4 (Encoding).")
 
     # ---------------------------------------------------------- 1. viewer
     def _build_viewer_tab(self):
